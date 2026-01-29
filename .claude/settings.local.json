@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php -l:*)",
+      "Bash(ionic generate:*)",
+      "Bash(npm run build:*)"
+    ]
+  }
+}
