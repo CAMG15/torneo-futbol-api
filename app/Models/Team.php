@@ -2,11 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 
 class Team extends Model
 {
+    use BelongsToTenant;
+
     protected $fillable = [
+        'tenant_id',
         'name', 'logo', 'primary_color', 'secondary_color',
         'captain_id', 'matches_played', 'wins', 'draws',
         'losses', 'goals_for', 'goals_against', 'points', 'active'

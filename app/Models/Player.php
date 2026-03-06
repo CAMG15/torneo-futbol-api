@@ -2,11 +2,15 @@
 // app/Models/Player.php
 namespace App\Models;
 
+use App\Models\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 
 class Player extends Model
 {
+    use BelongsToTenant;
+
     protected $fillable = [
+        'tenant_id',
         'name', 'lastname', 'nickname', 'birthdate', 'photo',
         'position', 'phone', 'email', 'goals', 'assists',
         'yellow_cards', 'red_cards', 'matches_played', 'active'

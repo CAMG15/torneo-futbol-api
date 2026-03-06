@@ -12,7 +12,9 @@
         "laravel/framework": "^10.10",
         "laravel/sanctum": "^3.3",
         "laravel/tinker": "^2.8",
+        "mercadopago/dx-php": "^2.6",
         "phpoffice/phpspreadsheet": "^5.3",
+        "srmklive/paypal": "~3.0",
         "symfony/mailer": "^6.4"
     },
     "require-dev": {

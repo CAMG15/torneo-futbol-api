@@ -8,6 +8,7 @@ use App\Models\Team;
 use App\Models\Player;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class TeamController extends Controller
@@ -98,6 +99,30 @@ class TeamController extends Controller
             return response()->json([
                 'error' => 'El jugador ya está en el equipo'
             ], 400);
+        }
+
+        // Verificar que el jugador no esté en otro equipo del mismo torneo
+        $tournamentIds = DB::table('tournament_team')
+            ->where('team_id', $team->id)
+            ->pluck('tournament_id');
+
+        if ($tournamentIds->isNotEmpty()) {
+            $conflict = DB::table('player_team')
+                ->join('tournament_team', 'player_team.team_id', '=', 'tournament_team.team_id')
+                ->join('tournaments', 'tournament_team.tournament_id', '=', 'tournaments.id')
+                ->join('teams', 'player_team.team_id', '=', 'teams.id')
+                ->where('player_team.player_id', $validated['player_id'])
+                ->whereNull('player_team.left_at')
+                ->whereIn('tournament_team.tournament_id', $tournamentIds)
+                ->where('player_team.team_id', '!=', $team->id)
+                ->select('teams.name as team_name', 'tournaments.name as tournament_name')
+                ->first();
+
+            if ($conflict) {
+                return response()->json([
+                    'error' => "El jugador ya pertenece al equipo \"{$conflict->team_name}\" en el torneo \"{$conflict->tournament_name}\"."
+                ], 400);
+            }
         }
 
         if ($validated['jersey_number']) {

@@ -2,13 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class Tournament extends Model
 {
+    use BelongsToTenant;
+
     protected $fillable = [
+        'tenant_id',
         'name',
         'description',
         'type',
@@ -23,7 +27,7 @@ class Tournament extends Model
         'end_date' => 'date'
     ];
 
-    protected $appends = ['current_matchday'];
+    protected $appends = ['current_matchday', 'progress_percentage'];
 
     /**
      * Relación con jornadas

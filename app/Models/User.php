@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -12,34 +14,66 @@ class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
     protected $fillable = [
         'name',
         'email',
         'password',
+        'is_superadmin',
+        'current_tenant_id',
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var array<int, string>
-     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    /**
-     * The attributes that should be cast.
-     *
-     * @var array<string, string>
-     */
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
+        'is_superadmin' => 'boolean',
     ];
+
+    // ========== TENANT RELATIONSHIPS ==========
+
+    public function tenants(): BelongsToMany
+    {
+        return $this->belongsToMany(Tenant::class, 'tenant_user')
+            ->withPivot('role')
+            ->withTimestamps();
+    }
+
+    public function ownedTenants(): HasMany
+    {
+        return $this->hasMany(Tenant::class, 'owner_id');
+    }
+
+    public function currentTenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class, 'current_tenant_id');
+    }
+
+    // ========== HELPERS ==========
+
+    public function roleInTenant(Tenant $tenant): ?string
+    {
+        $pivot = $this->tenants()->where('tenant_id', $tenant->id)->first();
+        return $pivot?->pivot?->role;
+    }
+
+    public function isSuperAdmin(): bool
+    {
+        return $this->is_superadmin ?? false;
+    }
+
+    public function belongsToTenant(int $tenantId): bool
+    {
+        return $this->tenants()->where('tenant_id', $tenantId)->exists();
+    }
+
+    public function switchTenant(int $tenantId): void
+    {
+        if ($this->belongsToTenant($tenantId)) {
+            $this->update(['current_tenant_id' => $tenantId]);
+        }
+    }
 }

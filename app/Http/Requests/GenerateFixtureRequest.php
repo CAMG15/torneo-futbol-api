@@ -13,11 +13,20 @@ class GenerateFixtureRequest extends FormRequest
 
     public function rules(): array
     {
+        // Si se usa from_matchday, start_date es opcional (se calcula automáticamente)
+        $startDateRule = $this->has('from_matchday') && $this->input('from_matchday') > 1
+            ? 'nullable|date'
+            : 'required|date|after_or_equal:today';
+
         $rules = [
             'rounds' => 'required|integer|min:1|max:3',
-            'start_date' => 'required|date|after_or_equal:today',
-            'days_between_matchdays' => 'required|integer|min:1|max:14',
+            'start_date' => $startDateRule,
+            'days_between_matchdays' => 'required|integer|min:1|max:30',
+            'match_day_of_week'      => 'nullable|integer|min:0|max:6',
             'location' => 'nullable|string|max:255',
+
+            // Regenerar desde jornada específica
+            'from_matchday' => 'nullable|integer|min:1',
 
             // Nuevo: tipo de schedule
             'schedule_type' => 'required|in:single_day,multi_day',
@@ -64,7 +73,7 @@ class GenerateFixtureRequest extends FormRequest
             'match_time.date_format' => 'El formato de hora debe ser HH:MM',
             'days_between_matchdays.required' => 'Los dias entre jornadas son obligatorios',
             'days_between_matchdays.min' => 'Debe haber al menos 1 dia entre jornadas',
-            'days_between_matchdays.max' => 'No puede haber mas de 14 dias entre jornadas',
+            'days_between_matchdays.max' => 'No puede haber mas de 30 dias entre jornadas',
             'matches_per_day.required_without' => 'Los partidos por dia son obligatorios si no hay slots',
             'matches_per_day.min' => 'Debe haber al menos 1 partido por dia',
             'matches_per_day.max' => 'No puede haber mas de 10 partidos por dia',
@@ -76,6 +85,8 @@ class GenerateFixtureRequest extends FormRequest
             'week_schedule.*.day_of_week.max' => 'El dia de la semana debe ser entre 0 (Domingo) y 6 (Sabado)',
             'time_slots.*.start_time.required_with' => 'La hora de inicio del slot es obligatoria',
             'time_slots.*.matches_count.required_with' => 'El numero de partidos del slot es obligatorio',
+            'from_matchday.integer' => 'El numero de jornada debe ser un entero',
+            'from_matchday.min' => 'El numero de jornada debe ser al menos 1',
         ];
     }
 

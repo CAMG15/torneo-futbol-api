@@ -2,13 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 
 class Matchs extends Model
 {
-    protected $table = 'matches';   // <-- Aquí declaras la tabla correcta
+    use BelongsToTenant;
+
+    protected $table = 'matches';
 
     protected $fillable = [
+        'tenant_id',
         'matchday_id', 'home_team_id', 'away_team_id',
         'match_date', 'location', 'home_score', 'away_score', 'status',
         'playoff_bracket_id', 'leg_number'

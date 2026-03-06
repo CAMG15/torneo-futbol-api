@@ -11,7 +11,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Tenant defaults (null hasta que el middleware los resuelva)
+        $this->app->singleton('current_tenant_id', fn () => null);
+        $this->app->singleton('current_tenant', fn () => null);
     }
 
     /**

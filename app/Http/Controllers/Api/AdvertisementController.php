@@ -39,10 +39,27 @@ class AdvertisementController extends Controller
     }
 
     /**
+     * Verificar que el tenant tiene plan pro o business
+     */
+    private function requireProPlan(): ?\Illuminate\Http\JsonResponse
+    {
+        $tenant = app()->bound('current_tenant') ? app('current_tenant') : null;
+        if (!$tenant || !in_array($tenant->plan, ['pro', 'business'])) {
+            return response()->json([
+                'error'            => 'Necesitas plan Pro o Business para gestionar anuncios.',
+                'upgrade_required' => true,
+            ], 403);
+        }
+        return null;
+    }
+
+    /**
      * Crear nuevo anuncio
      */
     public function store(Request $request)
     {
+        if ($err = $this->requireProPlan()) return $err;
+
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'image' => 'required|image|max:2048',
@@ -76,6 +93,8 @@ class AdvertisementController extends Controller
      */
     public function update(Request $request, Advertisement $advertisement)
     {
+        if ($err = $this->requireProPlan()) return $err;
+
         $validated = $request->validate([
             'title' => 'string|max:255',
             'image' => 'nullable|image|max:2048',
@@ -105,6 +124,8 @@ class AdvertisementController extends Controller
      */
     public function destroy(Advertisement $advertisement)
     {
+        if ($err = $this->requireProPlan()) return $err;
+
         // Eliminar imagen
         if ($advertisement->image) {
             Storage::disk('public')->delete($advertisement->image);
@@ -120,6 +141,8 @@ class AdvertisementController extends Controller
      */
     public function toggleActive(Advertisement $advertisement)
     {
+        if ($err = $this->requireProPlan()) return $err;
+
         $advertisement->active = !$advertisement->active;
         $advertisement->save();
 
