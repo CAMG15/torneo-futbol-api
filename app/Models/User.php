@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\Mail\PasswordResetMail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
@@ -32,6 +34,14 @@ class User extends Authenticatable
         'password' => 'hashed',
         'is_superadmin' => 'boolean',
     ];
+
+    // ========== PASSWORD RESET ==========
+
+    public function sendPasswordResetNotification($token): void
+    {
+        $url = config('app.frontend_url') . '/auth/reset-password?token=' . $token . '&email=' . urlencode($this->email);
+        Mail::to($this->email)->send(new PasswordResetMail($this, $url));
+    }
 
     // ========== TENANT RELATIONSHIPS ==========
 
