@@ -18,7 +18,11 @@ use App\Http\Controllers\Api\SuperAdminController;
 use App\Http\Controllers\Api\UserManagementController;
 use App\Http\Controllers\Api\CanchaController;
 use App\Http\Controllers\Api\ReservaController;
+use App\Http\Controllers\Api\TeamPaymentController;
 use App\Http\Controllers\Api\SupportTicketController;
+use App\Http\Controllers\Api\PlanController;
+use App\Http\Controllers\Api\AffiliateController;
+use App\Http\Controllers\Api\SuperAdminAffiliateController;
 
 /*
 |--------------------------------------------------------------------------
@@ -225,16 +229,12 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::get('players/export/excel', [ExportController::class, 'playersExcel'])
         ->middleware('plan.limit:export');
 
-    // Billing y Suscripciones
+    // Billing y Suscripciones (solo recurrentes)
     Route::prefix('billing')->group(function () {
         Route::get('current-plan', [SubscriptionController::class, 'currentPlan']);
-        Route::post('checkout/mercadopago', [SubscriptionController::class, 'checkoutMercadoPago']);
-        Route::post('checkout/paypal', [SubscriptionController::class, 'checkoutPayPal']);
-        Route::post('capture/paypal', [SubscriptionController::class, 'capturePayPal']);
         Route::post('cancel', [SubscriptionController::class, 'cancel']);
         Route::post('downgrade', [SubscriptionController::class, 'downgradeToFree']);
         Route::get('payments', [SubscriptionController::class, 'paymentHistory']);
-        // Suscripciones recurrentes
         Route::post('subscribe/mercadopago', [SubscriptionController::class, 'subscribeMercadoPago']);
         Route::post('subscribe/paypal', [SubscriptionController::class, 'subscribePayPal']);
         Route::post('cancel-recurring', [SubscriptionController::class, 'cancelRecurring']);
@@ -281,6 +281,15 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::put('recurrencias/{rec}', [ReservaController::class, 'updateRecurrencia']);
     Route::delete('recurrencias/{rec}', [ReservaController::class, 'destroyRecurrencia']);
 
+    // Pagos de equipos
+    Route::get('team-payments/summary', [TeamPaymentController::class, 'summary']);
+    Route::get('team-payments', [TeamPaymentController::class, 'index']);
+    Route::post('team-payments', [TeamPaymentController::class, 'store']);
+    Route::get('team-payments/{teamPayment}', [TeamPaymentController::class, 'show']);
+    Route::put('team-payments/{teamPayment}', [TeamPaymentController::class, 'update']);
+    Route::post('team-payments/{teamPayment}/mark-paid', [TeamPaymentController::class, 'markAsPaid']);
+    Route::delete('team-payments/{teamPayment}', [TeamPaymentController::class, 'destroy']);
+
     // Dominios personalizados
     Route::prefix('domains')->group(function () {
         Route::get('/', [DomainController::class, 'index']);
@@ -288,6 +297,15 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
         Route::post('{domain}/verify', [DomainController::class, 'verify']);
         Route::post('{domain}/set-active', [DomainController::class, 'setActive']);
         Route::delete('{domain}', [DomainController::class, 'destroy']);
+    });
+
+    // Afiliados (tenant)
+    Route::prefix('affiliates')->group(function () {
+        Route::get('/', [AffiliateController::class, 'show']);
+        Route::post('/register', [AffiliateController::class, 'register']);
+        Route::put('/payment-info', [AffiliateController::class, 'updatePaymentInfo']);
+        Route::get('/commissions', [AffiliateController::class, 'commissions']);
+        Route::post('/request-payout', [AffiliateController::class, 'requestPayout']);
     });
 });
 
@@ -304,7 +322,18 @@ Route::prefix('superadmin')->middleware(['auth:sanctum', 'superadmin'])->group(f
     Route::put('tenants/{tenant}/change-plan', [SuperAdminController::class, 'changePlan']);
     Route::get('subscriptions', [SuperAdminController::class, 'subscriptions']);
     Route::get('payments', [SuperAdminController::class, 'payments']);
+    // Planes de suscripción
+    Route::get('plans', [PlanController::class, 'index']);
+    Route::put('plans/{plan}', [PlanController::class, 'update']);
     // Soporte
     Route::get('support-tickets', [SupportTicketController::class, 'adminIndex']);
     Route::put('support-tickets/{ticket}', [SupportTicketController::class, 'adminUpdate']);
+
+    // Afiliados (superadmin)
+    Route::prefix('affiliates')->group(function () {
+        Route::get('/', [SuperAdminAffiliateController::class, 'index']);
+        Route::put('/{affiliate}', [SuperAdminAffiliateController::class, 'update']);
+        Route::get('/{affiliate}/commissions', [SuperAdminAffiliateController::class, 'commissions']);
+        Route::post('/{affiliate}/mark-paid', [SuperAdminAffiliateController::class, 'markPaid']);
+    });
 });

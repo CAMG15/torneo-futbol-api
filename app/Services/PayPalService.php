@@ -8,6 +8,7 @@ use App\Models\Tenant;
 use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Services\AffiliateService;
 use Srmklive\PayPal\Services\PayPal as PayPalClient;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -392,7 +393,7 @@ class PayPalService
         ]);
 
         // Registrar pago de renovación
-        Payment::create([
+        $recurringPayment = Payment::create([
             'tenant_id'           => $subscription->tenant_id,
             'subscription_id'     => $subscription->id,
             'amount_cents'        => (int) (($resource['amount']['total'] ?? 0) * 100),
@@ -404,6 +405,15 @@ class PayPalService
             'description'         => 'Renovación automática - PayPal',
             'provider_data'       => $resource,
         ]);
+
+        try {
+            (new AffiliateService())->processPaymentCommission($recurringPayment);
+        } catch (\Exception $e) {
+            Log::warning('PayPal: AffiliateService error on recurring payment', [
+                'error'      => $e->getMessage(),
+                'payment_id' => $recurringPayment->id,
+            ]);
+        }
 
         Log::info('PayPal: Recurring payment processed', [
             'subscription_id'     => $subscription->id,
@@ -457,6 +467,16 @@ class PayPalService
             'plan'            => $plan->slug,
             'subscription_id' => $subscription->id,
         ]);
+
+        // Proceso de comisión de afiliado
+        try {
+            (new AffiliateService())->processPaymentCommission($payment->fresh());
+        } catch (\Exception $e) {
+            Log::warning('PayPal: AffiliateService error on single payment', [
+                'error'      => $e->getMessage(),
+                'payment_id' => $payment->id,
+            ]);
+        }
 
         try {
             $owner = User::find($tenant->owner_id);

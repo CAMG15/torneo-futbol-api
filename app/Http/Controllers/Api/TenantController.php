@@ -107,6 +107,7 @@ class TenantController extends Controller
             'secondary_color' => $tenant->secondary_color,
             'font_family' => $tenant->font_family,
             'city' => $tenant->city,
+            'address' => $tenant->address,
             'phone' => $tenant->phone,
             'email' => $tenant->email,
             'description' => $tenant->description,

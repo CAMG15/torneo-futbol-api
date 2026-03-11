@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Mail\WelcomeMail;
+use App\Models\Affiliate;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -17,12 +18,59 @@ class AuthController extends Controller
 {
     public function register(Request $request)
     {
+        $accountType = $request->input('account_type', 'admin');
+
+        if ($accountType === 'affiliate') {
+            $validated = $request->validate([
+                'name'     => 'required|string|max:255',
+                'email'    => 'required|string|email|max:255|unique:users',
+                'password' => 'required|string|min:8|confirmed',
+            ]);
+
+            // Crear usuario
+            $user = User::create([
+                'name'     => $validated['name'],
+                'email'    => $validated['email'],
+                'password' => Hash::make($validated['password']),
+            ]);
+
+            // Generar código único de 8 chars
+            do {
+                $code = strtoupper(Str::random(8));
+            } while (Affiliate::where('code', $code)->exists());
+
+            // Crear registro de afiliado
+            $affiliate = Affiliate::create([
+                'user_id'         => $user->id,
+                'code'            => $code,
+                'status'          => 'pending',
+                'commission_rate' => 0.10,
+            ]);
+
+            $token = $user->createToken('auth_token')->plainTextToken;
+
+            return response()->json([
+                'message'    => 'Registro exitoso',
+                'user'       => $user,
+                'tenant'     => null,
+                'affiliate'  => [
+                    'id'     => $affiliate->id,
+                    'code'   => $affiliate->code,
+                    'status' => $affiliate->status,
+                ],
+                'token'      => $token,
+                'token_type' => 'Bearer',
+            ], 201);
+        }
+
+        // Default: admin account type
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8|confirmed',
-            'cancha_name' => 'required|string|max:255',
-            'city' => 'nullable|string|max:255',
+            'name'          => 'required|string|max:255',
+            'email'         => 'required|string|email|max:255|unique:users',
+            'password'      => 'required|string|min:8|confirmed',
+            'cancha_name'   => 'required|string|max:255',
+            'city'          => 'nullable|string|max:255',
+            'referral_code' => 'nullable|string|max:10',
         ]);
 
         // Generar slug único
@@ -40,15 +88,27 @@ class AuthController extends Controller
             'password' => Hash::make($validated['password']),
         ]);
 
+        // Resolve referral code: verify it belongs to an active affiliate
+        $referralCode = null;
+        if (!empty($validated['referral_code'])) {
+            $affiliateExists = Affiliate::where('code', strtoupper($validated['referral_code']))
+                ->where('status', 'active')
+                ->exists();
+            if ($affiliateExists) {
+                $referralCode = strtoupper($validated['referral_code']);
+            }
+        }
+
         // Crear tenant
         $tenant = Tenant::create([
-            'name' => $validated['cancha_name'],
-            'slug' => $slug,
-            'owner_id' => $user->id,
-            'plan' => 'free',
-            'city' => $validated['city'] ?? null,
-            'email' => $validated['email'],
-            'is_active' => true,
+            'name'             => $validated['cancha_name'],
+            'slug'             => $slug,
+            'owner_id'         => $user->id,
+            'plan'             => 'free',
+            'city'             => $validated['city'] ?? null,
+            'email'            => $validated['email'],
+            'is_active'        => true,
+            'referred_by_code' => $referralCode,
         ]);
 
         // Asociar usuario como owner
@@ -65,10 +125,11 @@ class AuthController extends Controller
         }
 
         return response()->json([
-            'message' => 'Registro exitoso',
-            'user' => $user->load('currentTenant'),
-            'tenant' => $tenant,
-            'token' => $token,
+            'message'    => 'Registro exitoso',
+            'user'       => $user->load('currentTenant'),
+            'tenant'     => $tenant,
+            'affiliate'  => null,
+            'token'      => $token,
             'token_type' => 'Bearer',
         ], 201);
     }
@@ -104,13 +165,20 @@ class AuthController extends Controller
             ? $user->roleInTenant($user->currentTenant)
             : null;
 
+        $affiliate = Affiliate::where('user_id', $user->id)->first();
+
         return response()->json([
-            'message' => 'Inicio de sesión exitoso',
-            'user' => $userData,
-            'tenant' => $user->currentTenant,
-            'tenants' => $user->tenants,
-            'token' => $token,
+            'message'    => 'Inicio de sesión exitoso',
+            'user'       => $userData,
+            'tenant'     => $user->currentTenant,
+            'tenants'    => $user->tenants,
+            'token'      => $token,
             'token_type' => 'Bearer',
+            'affiliate'  => $affiliate ? [
+                'id'     => $affiliate->id,
+                'status' => $affiliate->status,
+                'code'   => $affiliate->code,
+            ] : null,
         ]);
     }
 

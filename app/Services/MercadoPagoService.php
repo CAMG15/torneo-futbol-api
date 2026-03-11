@@ -8,6 +8,7 @@ use App\Models\Tenant;
 use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Services\AffiliateService;
 use MercadoPago\SDK;
 use MercadoPago\Preference;
 use MercadoPago\Item;
@@ -232,7 +233,7 @@ class MercadoPagoService
             ]);
 
             // Registrar pago de renovación
-            Payment::create([
+            $recurringPayment = Payment::create([
                 'tenant_id'           => $subscription->tenant_id,
                 'subscription_id'     => $subscription->id,
                 'amount_cents'        => (int) (($data['transaction_amount'] ?? 0) * 100),
@@ -244,6 +245,15 @@ class MercadoPagoService
                 'description'         => 'Renovación automática - MercadoPago',
                 'provider_data'       => $data,
             ]);
+
+            try {
+                (new AffiliateService())->processPaymentCommission($recurringPayment);
+            } catch (\Exception $e) {
+                Log::warning('MercadoPago: AffiliateService error on recurring payment', [
+                    'error'      => $e->getMessage(),
+                    'payment_id' => $recurringPayment->id,
+                ]);
+            }
 
             Log::info('MercadoPago: Recurring payment processed', [
                 'subscription_id'      => $subscription->id,
@@ -374,6 +384,16 @@ class MercadoPagoService
             'plan'            => $plan->slug,
             'subscription_id' => $subscription->id,
         ]);
+
+        // Proceso de comisión de afiliado
+        try {
+            (new AffiliateService())->processPaymentCommission($payment->fresh());
+        } catch (\Exception $e) {
+            Log::warning('MercadoPago: AffiliateService error on single payment', [
+                'error'      => $e->getMessage(),
+                'payment_id' => $payment->id,
+            ]);
+        }
 
         // Enviar email de confirmación al owner
         try {

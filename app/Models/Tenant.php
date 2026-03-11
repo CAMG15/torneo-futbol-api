@@ -29,6 +29,7 @@ class Tenant extends Model
         'is_active',
         'trial_ends_at',
         'settings',
+        'referred_by_code',
     ];
 
     protected $casts = [
@@ -105,12 +106,12 @@ class Tenant extends Model
 
     public function isProPlan(): bool
     {
-        return $this->plan === 'pro';
+        return in_array($this->plan, ['pro', 'pro_annual']);
     }
 
     public function isBusinessPlan(): bool
     {
-        return $this->plan === 'business';
+        return in_array($this->plan, ['business', 'business_annual']);
     }
 
     public function canCreateTournament(): bool
@@ -121,32 +122,32 @@ class Tenant extends Model
 
     public function hasPublicSite(): bool
     {
-        return in_array($this->plan, ['free', 'pro', 'business']);
+        return in_array($this->plan, ['free', 'pro', 'pro_annual', 'business', 'business_annual']);
     }
 
     public function hasCustomDomain(): bool
     {
-        return $this->plan === 'business' && !empty($this->custom_domain);
+        return in_array($this->plan, ['business', 'business_annual']) && !empty($this->custom_domain);
     }
 
     public function showMiCopaBranding(): bool
     {
-        return $this->plan !== 'business';
+        return !in_array($this->plan, ['business', 'business_annual']);
     }
 
     public function canExport(): bool
     {
-        return in_array($this->plan, ['pro', 'business']);
+        return in_array($this->plan, ['pro', 'pro_annual', 'business', 'business_annual']);
     }
 
     public function hasAdvancedStats(): bool
     {
-        return $this->plan === 'business';
+        return in_array($this->plan, ['business', 'business_annual']);
     }
 
     public function canShowSponsors(): bool
     {
-        return $this->plan === 'business';
+        return in_array($this->plan, ['business', 'business_annual']);
     }
 
     public function canCreateReserva(): bool

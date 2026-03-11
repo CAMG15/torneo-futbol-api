@@ -33,6 +33,7 @@ class BrandingController extends Controller
                 'description' => $tenant->description,
                 'phone' => $tenant->phone,
                 'email' => $tenant->email,
+                'address' => $tenant->address,
             ],
             'can_customize' => in_array($tenant->plan, ['pro', 'business']),
         ]);
@@ -64,6 +65,7 @@ class BrandingController extends Controller
                 'description' => 'sometimes|nullable|string|max:1000',
                 'phone' => 'sometimes|nullable|string|max:30',
                 'email' => 'sometimes|nullable|email|max:255',
+                'address' => 'sometimes|nullable|string|max:255',
             ]);
 
             $tenant->update($validated);
@@ -84,6 +86,7 @@ class BrandingController extends Controller
             'description' => 'sometimes|nullable|string|max:1000',
             'phone' => 'sometimes|nullable|string|max:30',
             'email' => 'sometimes|nullable|email|max:255',
+            'address' => 'sometimes|nullable|string|max:255',
         ]);
 
         $tenant->update($validated);

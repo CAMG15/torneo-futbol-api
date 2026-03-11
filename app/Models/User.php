@@ -43,6 +43,13 @@ class User extends Authenticatable
         Mail::to($this->email)->send(new PasswordResetMail($this, $url));
     }
 
+    // ========== AFFILIATE RELATIONSHIP ==========
+
+    public function affiliate()
+    {
+        return $this->hasOne(\App\Models\Affiliate::class);
+    }
+
     // ========== TENANT RELATIONSHIPS ==========
 
     public function tenants(): BelongsToMany
