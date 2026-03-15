@@ -26,6 +26,7 @@ class PlanSeeder extends Seeder
                     'sponsors' => false,
                     'advanced_stats' => false,
                     'auto_fixture' => true,
+                    'online_payments' => false,
                     'micopa_branding' => true,
                 ],
                 'limits' => [
@@ -49,6 +50,7 @@ class PlanSeeder extends Seeder
                     'sponsors' => false,
                     'advanced_stats' => false,
                     'auto_fixture' => true,
+                    'online_payments' => true,
                     'micopa_branding' => true,
                 ],
                 'limits' => [
@@ -72,6 +74,7 @@ class PlanSeeder extends Seeder
                     'sponsors' => true,
                     'advanced_stats' => true,
                     'auto_fixture' => true,
+                    'online_payments' => true,
                     'micopa_branding' => false,
                 ],
                 'limits' => [
@@ -96,6 +99,7 @@ class PlanSeeder extends Seeder
                     'sponsors' => false,
                     'advanced_stats' => false,
                     'auto_fixture' => true,
+                    'online_payments' => true,
                     'micopa_branding' => true,
                 ],
                 'limits' => [
@@ -119,6 +123,7 @@ class PlanSeeder extends Seeder
                     'sponsors' => true,
                     'advanced_stats' => true,
                     'auto_fixture' => true,
+                    'online_payments' => true,
                     'micopa_branding' => false,
                 ],
                 'limits' => [

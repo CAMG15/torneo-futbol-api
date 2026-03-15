@@ -166,10 +166,10 @@
                     <tr class="{{ $index < 3 ? 'top-3' : ($index >= count($standings) - 3 ? 'bottom-3' : '') }}">
                         <td class="text-center position">{{ $index + 1 }}</td>
                         <td>{{ $team['name'] }}</td>
-                        <td class="text-center">{{ $team['played'] }}</td>
-                        <td class="text-center">{{ $team['won'] }}</td>
-                        <td class="text-center">{{ $team['drawn'] }}</td>
-                        <td class="text-center">{{ $team['lost'] }}</td>
+                        <td class="text-center">{{ $team['matches_played'] }}</td>
+                        <td class="text-center">{{ $team['wins'] }}</td>
+                        <td class="text-center">{{ $team['draws'] }}</td>
+                        <td class="text-center">{{ $team['losses'] }}</td>
                         <td class="text-center">{{ $team['goals_for'] }}</td>
                         <td class="text-center">{{ $team['goals_against'] }}</td>
                         <td class="text-center">{{ $team['goal_difference'] > 0 ? '+' : '' }}{{ $team['goal_difference'] }}</td>

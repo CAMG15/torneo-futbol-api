@@ -43,6 +43,7 @@ class GenerateFixtureRequest extends FormRequest
                 'time_slots.*.start_time' => 'required_with:time_slots|date_format:H:i',
                 'time_slots.*.matches_count' => 'required_with:time_slots|integer|min:1|max:5',
                 'time_slots.*.location' => 'nullable|string|max:255',
+                'time_slots.*.cancha_id' => 'nullable|integer|exists:canchas,id',
             ]);
         }
 
@@ -55,6 +56,7 @@ class GenerateFixtureRequest extends FormRequest
                 'week_schedule.*.time_slots.*.start_time' => 'required|date_format:H:i',
                 'week_schedule.*.time_slots.*.matches_count' => 'required|integer|min:1|max:5',
                 'week_schedule.*.time_slots.*.location' => 'nullable|string|max:255',
+                'week_schedule.*.time_slots.*.cancha_id' => 'nullable|integer|exists:canchas,id',
             ]);
         }
 

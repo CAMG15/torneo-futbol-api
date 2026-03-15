@@ -26,23 +26,28 @@ class PayPalService
             throw new \RuntimeException('PayPal no configurado. Agrega PAYPAL_CLIENT_ID y PAYPAL_CLIENT_SECRET en el archivo .env');
         }
 
-        $this->client = new PayPalClient;
-        $this->client->setApiCredentials([
-            'mode' => config('services.paypal.mode', 'sandbox'),
+        $mode = config('services.paypal.mode', 'sandbox');
+
+        $paypalConfig = [
+            'mode' => $mode,
             'sandbox' => [
                 'client_id'     => $clientId,
                 'client_secret' => $clientSecret,
+                'app_id'        => '',
             ],
             'live' => [
                 'client_id'     => $clientId,
                 'client_secret' => $clientSecret,
+                'app_id'        => '',
             ],
             'payment_action' => 'Sale',
             'currency'       => 'MXN',
             'notify_url'     => '',
             'locale'         => 'es_MX',
             'validate_ssl'   => true,
-        ]);
+        ];
+
+        $this->client = new PayPalClient($paypalConfig);
         $this->client->getAccessToken();
     }
 

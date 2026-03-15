@@ -60,6 +60,10 @@ class MercadoPagoService
             'pending' => $frontendUrl . '/admin/billing?status=pending&provider=mercadopago',
         ];
         $preference->auto_return      = 'approved';
+        $preference->payment_methods = [
+            'excluded_payment_types' => [],   // ningún tipo excluido
+            'installments'           => 1,    // sin meses sin intereses
+        ];
         $preference->external_reference = json_encode([
             'tenant_id' => $tenant->id,
             'plan_id'   => $plan->id,
@@ -304,42 +308,46 @@ class MercadoPagoService
      */
     public function processPayment(string $paymentId): void
     {
-        try {
-            $mpPayment = \MercadoPago\Payment::find_by_id((int) $paymentId);
-        } catch (\Exception $e) {
+        $response = Http::withToken($this->accessToken)
+            ->get("https://api.mercadopago.com/v1/payments/{$paymentId}");
+
+        if ($response->failed()) {
             Log::error('MercadoPago: Error fetching payment', [
                 'payment_id' => $paymentId,
-                'error'      => $e->getMessage(),
+                'status'     => $response->status(),
+                'body'       => $response->body(),
             ]);
             return;
         }
 
-        $externalRef = json_decode($mpPayment->external_reference, true);
+        $mpPayment = $response->json();
+
+        $externalRef = json_decode($mpPayment['external_reference'] ?? '{}', true);
         if (!$externalRef || !isset($externalRef['tenant_id'], $externalRef['plan_id'])) {
             Log::warning('MercadoPago: Invalid external reference', [
                 'payment_id'         => $paymentId,
-                'external_reference' => $mpPayment->external_reference,
+                'external_reference' => $mpPayment['external_reference'] ?? null,
             ]);
             return;
         }
 
-        $status = $this->mapPaymentStatus($mpPayment->status);
+        $status = $this->mapPaymentStatus($mpPayment['status'] ?? '');
 
         $payment = Payment::updateOrCreate(
-            ['provider_payment_id' => (string) $mpPayment->id],
+            ['provider_payment_id' => (string) $mpPayment['id']],
             [
                 'tenant_id'        => $externalRef['tenant_id'],
-                'amount_cents'     => (int) ($mpPayment->transaction_amount * 100),
-                'currency'         => $mpPayment->currency_id ?? 'MXN',
+                'amount_cents'     => (int) (($mpPayment['transaction_amount'] ?? 0) * 100),
+                'currency'         => $mpPayment['currency_id'] ?? 'MXN',
                 'payment_provider' => 'mercadopago',
                 'status'           => $status,
-                'payment_method'   => $mpPayment->payment_method_id ?? null,
-                'description'      => $mpPayment->description ?? null,
+                'payment_method'   => $mpPayment['payment_method_id'] ?? null,
+                'description'      => $mpPayment['description'] ?? null,
                 'provider_data'    => [
-                    'id'             => $mpPayment->id,
-                    'status'         => $mpPayment->status,
-                    'status_detail'  => $mpPayment->status_detail,
-                    'payment_type'   => $mpPayment->payment_type_id ?? null,
+                    'id'            => $mpPayment['id'],
+                    'status'        => $mpPayment['status'],
+                    'status_detail' => $mpPayment['status_detail'] ?? null,
+                    'payment_type'  => $mpPayment['payment_type_id'] ?? null,
                 ],
                 'paid_at' => $status === 'approved' ? now() : null,
             ]

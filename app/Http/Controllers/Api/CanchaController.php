@@ -20,7 +20,7 @@ class CanchaController extends Controller
     {
         $validated = $request->validate([
             'nombre'      => 'required|string|max:100',
-            'tipo'        => 'required|in:futbol5,futbol7,futbol11,futsal,otro',
+            'tipo'        => 'required|in:futbol5,futbol7,futbol9,futbol11,futsal,otro',
             'descripcion' => 'nullable|string|max:500',
             'activa'      => 'sometimes|boolean',
         ]);
@@ -34,7 +34,7 @@ class CanchaController extends Controller
     {
         $validated = $request->validate([
             'nombre'      => 'sometimes|string|max:100',
-            'tipo'        => 'sometimes|in:futbol5,futbol7,futbol11,futsal,otro',
+            'tipo'        => 'sometimes|in:futbol5,futbol7,futbol9,futbol11,futsal,otro',
             'descripcion' => 'nullable|string|max:500',
             'activa'      => 'sometimes|boolean',
         ]);

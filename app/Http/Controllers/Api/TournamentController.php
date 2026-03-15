@@ -12,6 +12,7 @@ use App\Models\Matchs;
 use App\Models\Team;
 use App\Models\MatchdaySchedule;
 use App\Models\MatchdayScheduleSlot;
+use App\Models\TournamentSlotReservation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -201,9 +202,11 @@ class TournamentController extends Controller
             return response()->json(['error' => 'El equipo no está en este torneo'], 404);
         }
 
-        // Eliminar todos los partidos del equipo en este torneo (los match_events se eliminan en cascada)
+        // Eliminar solo los partidos NO finalizados del equipo en este torneo.
+        // Los partidos ya jugados se conservan para que los rivales mantengan sus puntos y goles.
         $matchdayIds = $tournament->matchdays()->pluck('id');
         Matchs::whereIn('matchday_id', $matchdayIds)
+            ->whereNotIn('status', ['Finalizado'])
             ->where(function ($q) use ($team) {
                 $q->where('home_team_id', $team->id)
                   ->orWhere('away_team_id', $team->id);
@@ -300,6 +303,7 @@ class TournamentController extends Controller
                         'day_of_week' => $dayConfig['day_of_week'],
                         'start_time' => $slot['start_time'],
                         'location' => $slot['location'] ?? $config['location'] ?? null,
+                        'cancha_id' => $slot['cancha_id'] ?? null,
                         'max_matches' => $slot['matches_count'] ?? 1,
                         'slot_order' => $slotOrder++
                     ]);
@@ -314,6 +318,7 @@ class TournamentController extends Controller
                     'day_of_week' => null,
                     'start_time' => $slot['start_time'],
                     'location' => $slot['location'] ?? $config['location'] ?? null,
+                    'cancha_id' => $slot['cancha_id'] ?? null,
                     'max_matches' => $slot['matches_count'] ?? 1,
                     'slot_order' => $slotOrder++
                 ]);
@@ -329,6 +334,7 @@ class TournamentController extends Controller
                     'day_of_week' => null,
                     'start_time' => $matchTime->format('H:i'),
                     'location' => $config['location'] ?? null,
+                    'cancha_id' => $config['cancha_id'] ?? null,
                     'max_matches' => 1,
                     'slot_order' => $i
                 ]);
@@ -347,6 +353,7 @@ class TournamentController extends Controller
     {
         $slots = $schedule->slots()->orderBy('slot_order')->get();
         $maxMatchesPerMatchday = $slots->sum('max_matches');
+        $reservations = $this->loadSlotReservations($tournament);
 
         // Agrupar partidos respetando el límite por equipo
         $teamTotalMatches = [];
@@ -371,21 +378,44 @@ class TournamentController extends Controller
                 'matchday_schedule_id' => $schedule->id
             ]);
 
-            $matchIndex = 0;
-            foreach ($slots as $slot) {
-                for ($m = 0; $m < $slot->max_matches && $matchIndex < count($matchdayMatches); $m++) {
-                    $match = $matchdayMatches[$matchIndex];
+            // Pre-asignar partidos con horario fijo a sus slots preferidos
+            $assigned = $this->assignMatchesToSlotBuckets($matchdayMatches, $slots, $reservations);
+            $freeMatches = $assigned['free'];
+
+            foreach ($slots->values() as $i => $slot) {
+                $slotMatches = $assigned['buckets'][$i] ?? [];
+                $remaining   = $assigned['capacity'][$i] ?? $slot->max_matches;
+
+                // Primero los reservados
+                foreach ($slotMatches as $match) {
                     Matchs::create([
-                        'matchday_id' => $matchday->id,
+                        'matchday_id'  => $matchday->id,
                         'home_team_id' => $match['home'],
                         'away_team_id' => $match['away'],
-                        'match_date' => $startDate->copy()->setTimeFromTimeString($slot->start_time),
-                        'location' => $slot->location ?? $config['location'] ?? null,
-                        'home_score' => 0,
-                        'away_score' => 0,
-                        'status' => 'Programado'
+                        'match_date'   => $startDate->copy()->setTimeFromTimeString($slot->start_time),
+                        'location'     => $slot->location ?? $config['location'] ?? null,
+                        'cancha_id'    => $slot->cancha_id ?? null,
+                        'home_score'   => 0,
+                        'away_score'   => 0,
+                        'status'       => 'Programado',
                     ]);
-                    $matchIndex++;
+                    $totalMatches++;
+                }
+
+                // Luego llenar con partidos libres
+                for ($m = 0; $m < $remaining && !empty($freeMatches); $m++) {
+                    $match = array_shift($freeMatches);
+                    Matchs::create([
+                        'matchday_id'  => $matchday->id,
+                        'home_team_id' => $match['home'],
+                        'away_team_id' => $match['away'],
+                        'match_date'   => $startDate->copy()->setTimeFromTimeString($slot->start_time),
+                        'location'     => $slot->location ?? $config['location'] ?? null,
+                        'cancha_id'    => $slot->cancha_id ?? null,
+                        'home_score'   => 0,
+                        'away_score'   => 0,
+                        'status'       => 'Programado',
+                    ]);
                     $totalMatches++;
                 }
             }
@@ -425,6 +455,7 @@ class TournamentController extends Controller
         // Agrupar partidos respetando el límite por equipo
         $teamTotalMatches = [];
         $matchdayGroups = $this->groupMatchesRespectingTeamLimit($matches, $matchesPerWeek, $teamTotalMatches);
+        $reservations = $this->loadSlotReservations($tournament);
 
         $startDate = Carbon::parse($config['start_date']);
 
@@ -453,23 +484,43 @@ class TournamentController extends Controller
                 'matchday_schedule_id' => $schedule->id
             ]);
 
-            $matchIndex = 0;
-            foreach ($slots as $slot) {
-                $slotDate = $this->getDateForDayOfWeek($weekStart, $slot->day_of_week);
+            // Pre-asignar partidos con horario fijo (multi_day: se considera día + hora)
+            $assigned = $this->assignMatchesToSlotBuckets($weekMatches, $slots, $reservations);
+            $freeMatches = $assigned['free'];
 
-                for ($m = 0; $m < $slot->max_matches && $matchIndex < count($weekMatches); $m++) {
-                    $match = $weekMatches[$matchIndex];
+            foreach ($slots->values() as $i => $slot) {
+                $slotDate    = $this->getDateForDayOfWeek($weekStart, $slot->day_of_week);
+                $slotMatches = $assigned['buckets'][$i] ?? [];
+                $remaining   = $assigned['capacity'][$i] ?? $slot->max_matches;
+
+                foreach ($slotMatches as $match) {
                     Matchs::create([
-                        'matchday_id' => $matchday->id,
+                        'matchday_id'  => $matchday->id,
                         'home_team_id' => $match['home'],
                         'away_team_id' => $match['away'],
-                        'match_date' => $slotDate->copy()->setTimeFromTimeString($slot->start_time),
-                        'location' => $slot->location ?? $config['location'] ?? null,
-                        'home_score' => 0,
-                        'away_score' => 0,
-                        'status' => 'Programado'
+                        'match_date'   => $slotDate->copy()->setTimeFromTimeString($slot->start_time),
+                        'location'     => $slot->location ?? $config['location'] ?? null,
+                        'cancha_id'    => $slot->cancha_id ?? null,
+                        'home_score'   => 0,
+                        'away_score'   => 0,
+                        'status'       => 'Programado',
                     ]);
-                    $matchIndex++;
+                    $totalMatches++;
+                }
+
+                for ($m = 0; $m < $remaining && !empty($freeMatches); $m++) {
+                    $match = array_shift($freeMatches);
+                    Matchs::create([
+                        'matchday_id'  => $matchday->id,
+                        'home_team_id' => $match['home'],
+                        'away_team_id' => $match['away'],
+                        'match_date'   => $slotDate->copy()->setTimeFromTimeString($slot->start_time),
+                        'location'     => $slot->location ?? $config['location'] ?? null,
+                        'cancha_id'    => $slot->cancha_id ?? null,
+                        'home_score'   => 0,
+                        'away_score'   => 0,
+                        'status'       => 'Programado',
+                    ]);
                     $totalMatches++;
                 }
             }
@@ -483,6 +534,83 @@ class TournamentController extends Controller
             'matchdays_created' => $matchdaysCreated,
             'total_matches' => $totalMatches
         ];
+    }
+
+    /**
+     * Carga los horarios fijos (slot reservations) del torneo como mapa team_id => reservation.
+     */
+    private function loadSlotReservations(Tournament $tournament): array
+    {
+        return TournamentSlotReservation::where('tournament_id', $tournament->id)
+            ->get()
+            ->keyBy('team_id')
+            ->all();
+    }
+
+    /**
+     * Distribuye los partidos de una jornada en buckets por slot, respetando horarios fijos.
+     *
+     * Devuelve un array indexado igual que $slots donde cada elemento es un array de matches
+     * asignados a ese slot. Los partidos sin preferencia se acumulan en $freeMatches (por ref).
+     *
+     * @param  array  $matchdayMatches  Lista de ['home'=>id,'away'=>id]
+     * @param  \Illuminate\Support\Collection  $slots  Colección de MatchdayScheduleSlot
+     * @param  array  $reservations  Mapa team_id=>TournamentSlotReservation
+     * @param  int|null  $filterDayOfWeek  Si se pasa, los slots se filtran a ese día (multi_day, slot por slot)
+     * @return array  ['buckets' => [slotIndex => [matches]], 'free' => [matches]]
+     */
+    private function assignMatchesToSlotBuckets(
+        array $matchdayMatches,
+        $slots,
+        array $reservations,
+        ?int $filterDayOfWeek = null
+    ): array {
+        // Construir índice de capacidad por slot
+        $buckets   = [];
+        $capacity  = [];
+        $slotsList = $slots->values(); // índices 0,1,2...
+
+        foreach ($slotsList as $i => $slot) {
+            // En multi_day sólo consideramos los slots de este día
+            if ($filterDayOfWeek !== null && $slot->day_of_week !== $filterDayOfWeek) {
+                continue;
+            }
+            $buckets[$i]  = [];
+            $capacity[$i] = $slot->max_matches;
+        }
+
+        $freeMatches = [];
+
+        foreach ($matchdayMatches as $match) {
+            $homeId = $match['home'];
+            $awayId = $match['away'];
+
+            // El home tiene prioridad; si no, revisar away
+            $reservation = $reservations[$homeId] ?? $reservations[$awayId] ?? null;
+
+            $placed = false;
+            if ($reservation !== null) {
+                // Buscar un slot que coincida con la reserva
+                foreach ($slotsList as $i => $slot) {
+                    if (!isset($capacity[$i])) continue; // slot filtrado
+                    if ($capacity[$i] <= 0) continue;
+
+                    $slotDay = $filterDayOfWeek ?? $slot->day_of_week;
+                    if ($reservation->matchesSlot($slot->start_time, $slotDay)) {
+                        $buckets[$i][] = $match;
+                        $capacity[$i]--;
+                        $placed = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!$placed) {
+                $freeMatches[] = $match;
+            }
+        }
+
+        return ['buckets' => $buckets, 'free' => $freeMatches, 'capacity' => $capacity, 'slots' => $slotsList];
     }
 
     /**
@@ -564,6 +692,9 @@ class TournamentController extends Controller
 
             DB::commit();
 
+            // Recalculate player and team stats from remaining events/matches
+            $this->recalculateStatsForTournament($tournament);
+
             return $this->generateFixture($request, $tournament);
 
         } catch (\Exception $e) {
@@ -572,6 +703,87 @@ class TournamentController extends Controller
                 'error' => 'Error al regenerar el fixture',
                 'message' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Recalculate player and team stats from remaining match_events/matches.
+     * Called after regenerating a fixture to ensure global counters are accurate.
+     */
+    private function recalculateStatsForTournament(Tournament $tournament): void
+    {
+        $teamIds = $tournament->teams()->pluck('teams.id');
+
+        // Player stats: recalculate from all remaining match_events for players in these teams
+        $playerIds = DB::table('player_team')
+            ->whereIn('team_id', $teamIds)
+            ->pluck('player_id')
+            ->unique();
+
+        foreach ($playerIds as $playerId) {
+            $goals = DB::table('match_events')
+                ->where('player_id', $playerId)
+                ->where('event_type', 'Gol')
+                ->count();
+            $assists = DB::table('match_events')
+                ->where('player_id', $playerId)
+                ->where('event_type', 'Asistencia')
+                ->count();
+            $yellowCards = DB::table('match_events')
+                ->where('player_id', $playerId)
+                ->where('event_type', 'Tarjeta Amarilla')
+                ->count();
+            $redCards = DB::table('match_events')
+                ->where('player_id', $playerId)
+                ->where('event_type', 'Tarjeta Roja')
+                ->count();
+
+            DB::table('players')->where('id', $playerId)->update([
+                'goals'        => $goals,
+                'assists'      => $assists,
+                'yellow_cards' => $yellowCards,
+                'red_cards'    => $redCards,
+            ]);
+        }
+
+        // Team stats: recalculate from all remaining finished matches
+        foreach ($teamIds as $teamId) {
+            $homeMatches = DB::table('matches')
+                ->where('home_team_id', $teamId)
+                ->where('status', 'Finalizado')
+                ->get(['home_score', 'away_score']);
+
+            $awayMatches = DB::table('matches')
+                ->where('away_team_id', $teamId)
+                ->where('status', 'Finalizado')
+                ->get(['home_score', 'away_score']);
+
+            $wins = 0; $draws = 0; $losses = 0; $goalsFor = 0; $goalsAgainst = 0;
+
+            foreach ($homeMatches as $m) {
+                $goalsFor      += $m->home_score ?? 0;
+                $goalsAgainst  += $m->away_score ?? 0;
+                if ($m->home_score > $m->away_score)      $wins++;
+                elseif ($m->home_score == $m->away_score) $draws++;
+                else                                       $losses++;
+            }
+            foreach ($awayMatches as $m) {
+                $goalsFor      += $m->away_score ?? 0;
+                $goalsAgainst  += $m->home_score ?? 0;
+                if ($m->away_score > $m->home_score)      $wins++;
+                elseif ($m->home_score == $m->away_score) $draws++;
+                else                                       $losses++;
+            }
+
+            DB::table('teams')->where('id', $teamId)->update([
+                'matches_played' => $homeMatches->count() + $awayMatches->count(),
+                'wins'           => $wins,
+                'draws'          => $draws,
+                'losses'         => $losses,
+                'goals_for'      => $goalsFor,
+                'goals_against'  => $goalsAgainst,
+                'points'         => ($wins * 3) + $draws,
+            ]);
         }
     }
 
@@ -743,6 +955,7 @@ class TournamentController extends Controller
     {
         $slots = $schedule->slots()->orderBy('slot_order')->get();
         $maxMatchesPerMatchday = $slots->sum('max_matches');
+        $reservations = $this->loadSlotReservations($tournament);
 
         // Agrupar partidos respetando el límite por equipo, considerando partidos ya jugados
         $teamTotalMatches = $existingTeamMatchCounts;
@@ -765,21 +978,41 @@ class TournamentController extends Controller
                 'matchday_schedule_id' => $schedule->id
             ]);
 
-            $matchIndex = 0;
-            foreach ($slots as $slot) {
-                for ($m = 0; $m < $slot->max_matches && $matchIndex < count($matchdayMatches); $m++) {
-                    $match = $matchdayMatches[$matchIndex];
+            $assigned    = $this->assignMatchesToSlotBuckets($matchdayMatches, $slots, $reservations);
+            $freeMatches = $assigned['free'];
+
+            foreach ($slots->values() as $i => $slot) {
+                $slotMatches = $assigned['buckets'][$i] ?? [];
+                $remaining   = $assigned['capacity'][$i] ?? $slot->max_matches;
+
+                foreach ($slotMatches as $match) {
                     Matchs::create([
-                        'matchday_id' => $matchday->id,
+                        'matchday_id'  => $matchday->id,
                         'home_team_id' => $match['home'],
                         'away_team_id' => $match['away'],
-                        'match_date' => $startDate->copy()->setTimeFromTimeString($slot->start_time),
-                        'location' => $slot->location ?? $config['location'] ?? null,
-                        'home_score' => 0,
-                        'away_score' => 0,
-                        'status' => 'Programado'
+                        'match_date'   => $startDate->copy()->setTimeFromTimeString($slot->start_time),
+                        'location'     => $slot->location ?? $config['location'] ?? null,
+                        'cancha_id'    => $slot->cancha_id ?? null,
+                        'home_score'   => 0,
+                        'away_score'   => 0,
+                        'status'       => 'Programado',
                     ]);
-                    $matchIndex++;
+                    $totalMatches++;
+                }
+
+                for ($m = 0; $m < $remaining && !empty($freeMatches); $m++) {
+                    $match = array_shift($freeMatches);
+                    Matchs::create([
+                        'matchday_id'  => $matchday->id,
+                        'home_team_id' => $match['home'],
+                        'away_team_id' => $match['away'],
+                        'match_date'   => $startDate->copy()->setTimeFromTimeString($slot->start_time),
+                        'location'     => $slot->location ?? $config['location'] ?? null,
+                        'cancha_id'    => $slot->cancha_id ?? null,
+                        'home_score'   => 0,
+                        'away_score'   => 0,
+                        'status'       => 'Programado',
+                    ]);
                     $totalMatches++;
                 }
             }
@@ -904,6 +1137,7 @@ class TournamentController extends Controller
         // Agrupar partidos respetando el límite por equipo, considerando partidos ya jugados
         $teamTotalMatches = $existingTeamMatchCounts;
         $matchdayGroups = $this->groupMatchesRespectingTeamLimit($matches, $matchesPerWeek, $teamTotalMatches);
+        $reservations = $this->loadSlotReservations($tournament);
 
         $startDate = Carbon::parse($config['start_date']);
         $weekStart = $startDate->copy()->startOfWeek(Carbon::MONDAY);
@@ -928,23 +1162,42 @@ class TournamentController extends Controller
                 'matchday_schedule_id' => $schedule->id
             ]);
 
-            $matchIndex = 0;
-            foreach ($slots as $slot) {
-                $slotDate = $this->getDateForDayOfWeek($weekStart, $slot->day_of_week);
+            $assigned    = $this->assignMatchesToSlotBuckets($weekMatches, $slots, $reservations);
+            $freeMatches = $assigned['free'];
 
-                for ($m = 0; $m < $slot->max_matches && $matchIndex < count($weekMatches); $m++) {
-                    $match = $weekMatches[$matchIndex];
+            foreach ($slots->values() as $i => $slot) {
+                $slotDate    = $this->getDateForDayOfWeek($weekStart, $slot->day_of_week);
+                $slotMatches = $assigned['buckets'][$i] ?? [];
+                $remaining   = $assigned['capacity'][$i] ?? $slot->max_matches;
+
+                foreach ($slotMatches as $match) {
                     Matchs::create([
-                        'matchday_id' => $matchday->id,
+                        'matchday_id'  => $matchday->id,
                         'home_team_id' => $match['home'],
                         'away_team_id' => $match['away'],
-                        'match_date' => $slotDate->copy()->setTimeFromTimeString($slot->start_time),
-                        'location' => $slot->location ?? $config['location'] ?? null,
-                        'home_score' => 0,
-                        'away_score' => 0,
-                        'status' => 'Programado'
+                        'match_date'   => $slotDate->copy()->setTimeFromTimeString($slot->start_time),
+                        'location'     => $slot->location ?? $config['location'] ?? null,
+                        'cancha_id'    => $slot->cancha_id ?? null,
+                        'home_score'   => 0,
+                        'away_score'   => 0,
+                        'status'       => 'Programado',
                     ]);
-                    $matchIndex++;
+                    $totalMatches++;
+                }
+
+                for ($m = 0; $m < $remaining && !empty($freeMatches); $m++) {
+                    $match = array_shift($freeMatches);
+                    Matchs::create([
+                        'matchday_id'  => $matchday->id,
+                        'home_team_id' => $match['home'],
+                        'away_team_id' => $match['away'],
+                        'match_date'   => $slotDate->copy()->setTimeFromTimeString($slot->start_time),
+                        'location'     => $slot->location ?? $config['location'] ?? null,
+                        'cancha_id'    => $slot->cancha_id ?? null,
+                        'home_score'   => 0,
+                        'away_score'   => 0,
+                        'status'       => 'Programado',
+                    ]);
                     $totalMatches++;
                 }
             }
@@ -999,6 +1252,84 @@ class TournamentController extends Controller
             'message' => 'Jornada actualizada exitosamente',
             'matchday' => $matchday->fresh()
         ]);
+    }
+
+    public function postponeMatchday(Request $request, Matchday $matchday): JsonResponse
+    {
+        $validated = $request->validate([
+            'new_date'  => 'required|date',
+            'reason'    => 'nullable|string|max:255',
+            'mode'      => 'required|in:cascade,manual',
+        ]);
+
+        $originalDate = Carbon::parse($matchday->date);
+        $newDate      = Carbon::parse($validated['new_date']);
+        $offsetDays   = $originalDate->diffInDays($newDate, false); // puede ser negativo
+
+        DB::beginTransaction();
+        try {
+            // Guardar fecha original solo la primera vez que se pospone
+            $matchday->update([
+                'postponed_from'       => $matchday->postponed_from ?? $originalDate->toDateString(),
+                'postponement_reason'  => $validated['reason'] ?? null,
+                'date'                 => $newDate->toDateString(),
+                'end_date'             => $matchday->end_date
+                    ? Carbon::parse($matchday->end_date)->addDays($offsetDays)->toDateString()
+                    : null,
+            ]);
+
+            // Mover match_dates de los partidos de esta jornada
+            foreach ($matchday->matches as $match) {
+                if ($match->match_date) {
+                    $match->update([
+                        'match_date' => Carbon::parse($match->match_date)->addDays($offsetDays),
+                    ]);
+                }
+            }
+
+            // Cascada: mover todas las jornadas siguientes (mayor número) del mismo torneo
+            if ($validated['mode'] === 'cascade') {
+                $following = Matchday::where('tournament_id', $matchday->tournament_id)
+                    ->where('number', '>', $matchday->number)
+                    ->orderBy('number')
+                    ->with('matches')
+                    ->get();
+
+                foreach ($following as $next) {
+                    $next->update([
+                        'date'     => Carbon::parse($next->date)->addDays($offsetDays)->toDateString(),
+                        'end_date' => $next->end_date
+                            ? Carbon::parse($next->end_date)->addDays($offsetDays)->toDateString()
+                            : null,
+                    ]);
+
+                    foreach ($next->matches as $match) {
+                        if ($match->match_date) {
+                            $match->update([
+                                'match_date' => Carbon::parse($match->match_date)->addDays($offsetDays),
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message'           => $validated['mode'] === 'cascade'
+                    ? 'Jornada reprogramada y jornadas siguientes recorridas exitosamente'
+                    : 'Jornada reprogramada exitosamente',
+                'offset_days'       => $offsetDays,
+                'matchdays_updated' => $validated['mode'] === 'cascade'
+                    ? Matchday::where('tournament_id', $matchday->tournament_id)
+                        ->where('number', '>=', $matchday->number)
+                        ->count()
+                    : 1,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Error al reprogramar: ' . $e->getMessage()], 500);
+        }
     }
 
     public function deleteMatchday(Matchday $matchday): JsonResponse

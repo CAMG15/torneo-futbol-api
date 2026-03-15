@@ -12,6 +12,7 @@ class MatchdayScheduleSlot extends Model
         'day_of_week',
         'start_time',
         'location',
+        'cancha_id',
         'max_matches',
         'slot_order'
     ];
@@ -19,7 +20,8 @@ class MatchdayScheduleSlot extends Model
     protected $casts = [
         'day_of_week' => 'integer',
         'max_matches' => 'integer',
-        'slot_order' => 'integer'
+        'slot_order' => 'integer',
+        'cancha_id' => 'integer'
     ];
 
     /**
@@ -41,6 +43,11 @@ class MatchdayScheduleSlot extends Model
     public function schedule(): BelongsTo
     {
         return $this->belongsTo(MatchdaySchedule::class, 'matchday_schedule_id');
+    }
+
+    public function cancha(): BelongsTo
+    {
+        return $this->belongsTo(Cancha::class);
     }
 
     /**

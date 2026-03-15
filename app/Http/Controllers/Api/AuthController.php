@@ -149,6 +149,16 @@ class AuthController extends Controller
             ]);
         }
 
+        // Verificar que el tenant esté activo (no aplica a superadmin)
+        if (!$user->is_superadmin && $user->current_tenant_id) {
+            $activeTenant = Tenant::find($user->current_tenant_id);
+            if ($activeTenant && !$activeTenant->is_active) {
+                throw ValidationException::withMessages([
+                    'email' => ['Tu cuenta ha sido desactivada. Contacta a soporte en soporte@micopa.pro.'],
+                ]);
+            }
+        }
+
         $token = $user->createToken('auth_token')->plainTextToken;
 
         // Cargar tenants del usuario

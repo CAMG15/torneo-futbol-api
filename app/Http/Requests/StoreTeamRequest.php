@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreTeamRequest extends FormRequest
 {
@@ -13,8 +14,13 @@ class StoreTeamRequest extends FormRequest
 
     public function rules(): array
     {
+        $tenantId = $this->user()?->tenant_id;
+
         return [
-            'name' => 'required|string|max:255|unique:teams,name',
+            'name' => [
+                'required', 'string', 'max:255',
+                Rule::unique('teams', 'name')->where('tenant_id', $tenantId),
+            ],
             'short_name' => 'nullable|string|max:10',
             'logo' => 'nullable|image|max:2048',
             'primary_color' => 'nullable|string|max:7',

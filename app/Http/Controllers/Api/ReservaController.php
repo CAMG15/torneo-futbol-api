@@ -208,8 +208,8 @@ class ReservaController extends Controller
 
         if ($conflicto) {
             return response()->json([
-                'error'     => 'El horario ya está ocupado.',
-                'conflicto' => $conflicto,
+                'error'     => 'El horario ya está ocupado. ' . $conflicto['mensaje'],
+                'tipo'      => $conflicto['tipo'],
             ], 409);
         }
 
@@ -241,8 +241,8 @@ class ReservaController extends Controller
 
         if ($conflicto) {
             return response()->json([
-                'error'     => 'El horario ya está ocupado.',
-                'conflicto' => $conflicto,
+                'error'     => 'El horario ya está ocupado. ' . $conflicto['mensaje'],
+                'tipo'      => $conflicto['tipo'],
             ], 409);
         }
 
@@ -387,19 +387,55 @@ class ReservaController extends Controller
         string $horaInicio,
         string $horaFin,
         ?int $excludeId = null
-    ): ?Reserva {
-        return Reserva::where('cancha_id', $canchaId)
+    ): ?array {
+        // 1. Conflicto con otras reservas en la misma cancha
+        $reserva = Reserva::where('cancha_id', $canchaId)
             ->where('fecha', $fecha)
             ->where('estado', '!=', 'cancelada')
             ->where(function ($q) use ($horaInicio, $horaFin) {
-                $q->where(function ($q2) use ($horaInicio, $horaFin) {
-                    // La nueva reserva empieza dentro de una existente
-                    $q2->where('hora_inicio', '<', $horaFin)
-                       ->where('hora_fin', '>', $horaInicio);
-                });
+                $q->where('hora_inicio', '<', $horaFin)
+                  ->where('hora_fin', '>', $horaInicio);
             })
             ->when($excludeId, fn($q) => $q->where('id', '!=', $excludeId))
             ->first();
+
+        if ($reserva) {
+            return [
+                'tipo'    => 'reserva',
+                'mensaje' => "Ya existe una reserva de {$reserva->hora_inicio} a {$reserva->hora_fin}.",
+            ];
+        }
+
+        // 2. Conflicto con partidos de torneos del mismo tenant
+        // Si el partido tiene cancha_id asignada, solo conflicto con la misma cancha.
+        // Si no tiene cancha_id, aplica a todas (comportamiento anterior).
+        $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : null;
+        if ($tenantId) {
+            $partido = Matchs::with(['homeTeam', 'awayTeam', 'matchday.tournament'])
+                ->where('tenant_id', $tenantId)
+                ->whereNotNull('match_date')
+                ->whereNotIn('status', ['Cancelado', 'Suspendido'])
+                ->where(function ($q) use ($canchaId) {
+                    $q->whereNull('cancha_id')->orWhere('cancha_id', $canchaId);
+                })
+                ->whereRaw("DATE(CONVERT_TZ(match_date, '+00:00', '-06:00')) = ?", [$fecha])
+                ->whereRaw("TIME(CONVERT_TZ(match_date, '+00:00', '-06:00')) < ?", [$horaFin])
+                ->whereRaw("ADDTIME(TIME(CONVERT_TZ(match_date, '+00:00', '-06:00')), '01:30:00') > ?", [$horaInicio])
+                ->first();
+
+            if ($partido) {
+                $home    = $partido->homeTeam?->name ?? '?';
+                $away    = $partido->awayTeam?->name ?? '?';
+                $torneo  = $partido->matchday?->tournament?->name ?? 'torneo';
+                $hora    = Carbon::parse($partido->match_date)->setTimezone('America/Mexico_City')->format('H:i');
+                return [
+                    'tipo'    => 'partido_torneo',
+                    'mensaje' => "Partido de torneo ({$torneo}): {$home} vs {$away} a las {$hora}.",
+                ];
+            }
+        }
+
+        return null;
     }
 
     private function buildTitle(Reserva $r): string

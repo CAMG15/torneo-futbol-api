@@ -13,28 +13,63 @@ class TeamPaymentController extends Controller
 {
     // ─── RESUMEN ─────────────────────────────────────────────────────────────────
 
-    public function summary(): JsonResponse
+    public function summary(Request $request): JsonResponse
     {
         $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : null;
         if (!$tenantId) {
-            return response()->json(['total_cobrado' => 0, 'total_pendiente' => 0, 'total_vencidos' => 0, 'count' => 0]);
+            return response()->json([
+                'total_cobrado' => 0,
+                'total_pendiente' => 0,
+                'total_vencidos' => 0,
+                'count' => 0,
+                'fecha_desde' => null,
+                'fecha_hasta' => null,
+            ]);
         }
 
-        $payments = TeamPayment::where('tenant_id', $tenantId)
-            ->whereIn('estado', ['pendiente', 'parcial', 'pagado'])
+        // Por defecto: mes actual
+        $fechaDesde = $request->filled('fecha_desde')
+            ? $request->fecha_desde
+            : now()->startOfMonth()->format('Y-m-d');
+        $fechaHasta = $request->filled('fecha_hasta')
+            ? $request->fecha_hasta
+            : now()->endOfMonth()->format('Y-m-d');
+
+        $query = TeamPayment::where('tenant_id', $tenantId)
+            ->whereIn('estado', ['pendiente', 'parcial', 'pagado']);
+
+        // Para cobrados: filtrar por fecha de pago (pagado_at)
+        $paymentsCobrados = (clone $query)
+            ->where('estado', 'pagado')
+            ->whereDate('pagado_at', '>=', $fechaDesde)
+            ->whereDate('pagado_at', '<=', $fechaHasta)
             ->get();
 
-        $totalCobrado   = $payments->where('estado', 'pagado')->sum('monto');
-        $totalParcial   = $payments->where('estado', 'parcial')->sum('monto_pagado');
-        $totalPendiente = $payments->whereIn('estado', ['pendiente', 'parcial'])
-            ->sum(fn($p) => $p->monto - $p->monto_pagado);
-        $totalVencidos  = $payments->filter(fn($p) => $p->es_vencido)->count();
+        // Para parciales cobrados en el rango
+        $paymentsParciales = (clone $query)
+            ->where('estado', 'parcial')
+            ->whereDate('updated_at', '>=', $fechaDesde)
+            ->whereDate('updated_at', '<=', $fechaHasta)
+            ->get();
+
+        // Pendientes y vencidos: filtrar por fecha de creación
+        $paymentsPendientes = (clone $query)
+            ->whereIn('estado', ['pendiente', 'parcial'])
+            ->whereDate('created_at', '>=', $fechaDesde)
+            ->whereDate('created_at', '<=', $fechaHasta)
+            ->get();
+
+        $totalCobrado = $paymentsCobrados->sum('monto') + $paymentsParciales->sum('monto_pagado');
+        $totalPendiente = $paymentsPendientes->sum(fn($p) => $p->monto - $p->monto_pagado);
+        $totalVencidos = $paymentsPendientes->filter(fn($p) => $p->es_vencido)->count();
 
         return response()->json([
-            'total_cobrado'   => round($totalCobrado + $totalParcial, 2),
+            'total_cobrado'   => round($totalCobrado, 2),
             'total_pendiente' => round($totalPendiente, 2),
             'total_vencidos'  => $totalVencidos,
-            'count'           => $payments->count(),
+            'count'           => $paymentsCobrados->count() + $paymentsParciales->count() + $paymentsPendientes->count(),
+            'fecha_desde'     => $fechaDesde,
+            'fecha_hasta'     => $fechaHasta,
         ]);
     }
 

@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class TeamController extends Controller
 {
@@ -41,15 +42,76 @@ class TeamController extends Controller
 
     public function show(Team $team): JsonResponse
     {
-        return response()->json(
-            $team->load(['captain', 'currentPlayers', 'homeMatches.awayTeam', 'awayMatches.homeTeam'])
-        );
+        $team->load(['captain', 'currentPlayers']);
+
+        // Stats por torneo calculadas dinámicamente desde los partidos
+        $tournamentIds = DB::table('tournament_team')
+            ->where('team_id', $team->id)
+            ->pluck('tournament_id');
+
+        $tournamentStats = [];
+        foreach ($tournamentIds as $tid) {
+            $tournament = DB::table('tournaments')->where('id', $tid)->first(['id', 'name', 'status']);
+            if (!$tournament) continue;
+
+            $homeMatches = DB::table('matches')
+                ->join('matchdays', 'matches.matchday_id', '=', 'matchdays.id')
+                ->where('matchdays.tournament_id', $tid)
+                ->where('matches.home_team_id', $team->id)
+                ->where('matches.status', 'Finalizado')
+                ->get(['matches.home_score', 'matches.away_score']);
+
+            $awayMatches = DB::table('matches')
+                ->join('matchdays', 'matches.matchday_id', '=', 'matchdays.id')
+                ->where('matchdays.tournament_id', $tid)
+                ->where('matches.away_team_id', $team->id)
+                ->where('matches.status', 'Finalizado')
+                ->get(['matches.home_score', 'matches.away_score']);
+
+            $wins = 0; $draws = 0; $losses = 0; $gf = 0; $ga = 0;
+            foreach ($homeMatches as $m) {
+                $gf += $m->home_score ?? 0; $ga += $m->away_score ?? 0;
+                if ($m->home_score > $m->away_score)      $wins++;
+                elseif ($m->home_score == $m->away_score) $draws++;
+                else                                       $losses++;
+            }
+            foreach ($awayMatches as $m) {
+                $gf += $m->away_score ?? 0; $ga += $m->home_score ?? 0;
+                if ($m->away_score > $m->home_score)      $wins++;
+                elseif ($m->home_score == $m->away_score) $draws++;
+                else                                       $losses++;
+            }
+            $played = $homeMatches->count() + $awayMatches->count();
+            if ($played === 0 && $tournament->status === 'Planificado') continue;
+
+            $tournamentStats[] = [
+                'tournament_id'   => $tournament->id,
+                'tournament_name' => $tournament->name,
+                'tournament_status' => $tournament->status,
+                'matches_played'  => $played,
+                'wins'            => $wins,
+                'draws'           => $draws,
+                'losses'          => $losses,
+                'goals_for'       => $gf,
+                'goals_against'   => $ga,
+                'goal_difference' => $gf - $ga,
+                'points'          => ($wins * 3) + $draws,
+            ];
+        }
+
+        $data = $team->toArray();
+        $data['tournament_stats'] = $tournamentStats;
+
+        return response()->json($data);
     }
 
     public function update(Request $request, Team $team): JsonResponse
     {
         $validated = $request->validate([
-            'name' => 'sometimes|string|max:255|unique:teams,name,' . $team->id,
+            'name' => [
+                'sometimes', 'string', 'max:255',
+                Rule::unique('teams', 'name')->ignore($team->id)->where('tenant_id', $request->user()?->tenant_id),
+            ],
             'short_name' => 'nullable|string|max:10',
             'logo' => 'nullable|image|max:2048',
             'primary_color' => 'nullable|string|max:7',
@@ -125,7 +187,7 @@ class TeamController extends Controller
             }
         }
 
-        if ($validated['jersey_number']) {
+        if (!empty($validated['jersey_number'])) {
             $jerseyTaken = $team->players()
                 ->wherePivotNull('left_at')
                 ->wherePivot('jersey_number', $validated['jersey_number'])

@@ -14,6 +14,8 @@ class Matchday extends Model
         'name',
         'date',
         'end_date',
+        'postponed_from',
+        'postponement_reason',
         'matchday_schedule_id',
         'phase_type',
         'tournament_phase_id'
@@ -21,7 +23,8 @@ class Matchday extends Model
 
     protected $casts = [
         'date' => 'date',
-        'end_date' => 'date'
+        'end_date' => 'date',
+        'postponed_from' => 'date',
     ];
 
     /**

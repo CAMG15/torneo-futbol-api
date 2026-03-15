@@ -14,7 +14,7 @@ class Matchs extends Model
     protected $fillable = [
         'tenant_id',
         'matchday_id', 'home_team_id', 'away_team_id',
-        'match_date', 'location', 'home_score', 'away_score', 'status',
+        'match_date', 'location', 'cancha_id', 'home_score', 'away_score', 'status',
         'playoff_bracket_id', 'leg_number'
     ];
 
@@ -25,6 +25,11 @@ class Matchs extends Model
     public function matchday()
     {
         return $this->belongsTo(Matchday::class);
+    }
+
+    public function cancha()
+    {
+        return $this->belongsTo(Cancha::class);
     }
 
     public function homeTeam()

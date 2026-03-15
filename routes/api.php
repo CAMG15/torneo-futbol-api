@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\SupportTicketController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\AffiliateController;
 use App\Http\Controllers\Api\SuperAdminAffiliateController;
+use App\Http\Controllers\Api\TournamentSlotReservationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -185,6 +186,7 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     // Jornadas
     Route::post('tournaments/{tournament}/matchdays', [TournamentController::class, 'createMatchday']);
     Route::put('matchdays/{matchday}', [TournamentController::class, 'updateMatchday']);
+    Route::post('matchdays/{matchday}/postpone', [TournamentController::class, 'postponeMatchday']);
     Route::delete('matchdays/{matchday}', [TournamentController::class, 'deleteMatchday']);
 
     // Partidos
@@ -280,6 +282,13 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::post('recurrencias', [ReservaController::class, 'storeRecurrencia'])->middleware('plan.limit:create_reserva');
     Route::put('recurrencias/{rec}', [ReservaController::class, 'updateRecurrencia']);
     Route::delete('recurrencias/{rec}', [ReservaController::class, 'destroyRecurrencia']);
+
+    // Horarios fijos (slot reservations por equipo en torneo)
+    Route::get('tournaments/{tournament}/slot-reservations', [TournamentSlotReservationController::class, 'index']);
+    Route::post('tournaments/{tournament}/slot-reservations', [TournamentSlotReservationController::class, 'store']);
+    Route::put('slot-reservations/{slotReservation}', [TournamentSlotReservationController::class, 'update']);
+    Route::post('slot-reservations/{slotReservation}/mark-paid', [TournamentSlotReservationController::class, 'markPaid']);
+    Route::delete('slot-reservations/{slotReservation}', [TournamentSlotReservationController::class, 'destroy']);
 
     // Pagos de equipos
     Route::get('team-payments/summary', [TeamPaymentController::class, 'summary']);
