@@ -480,9 +480,9 @@ class MatchController extends Controller
 
     public function startMatch(Matchs $match): JsonResponse
     {
-        if ($match->status !== 'Programado') {
+        if (!in_array($match->status, ['Programado', 'Pospuesto', 'Suspendido'])) {
             return response()->json([
-                'error' => 'Solo se pueden iniciar partidos con estado Programado'
+                'error' => 'Solo se pueden iniciar partidos con estado Programado, Pospuesto o Suspendido'
             ], 400);
         }
 

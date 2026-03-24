@@ -3,12 +3,31 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use App\Models\Player;
 
 class StorePlayerRequest extends FormRequest
 {
     public function authorize(): bool
     {
         return true;
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            if ($validator->errors()->any()) return;
+
+            $tenantId = $this->user()?->tenant_id;
+            $exists = Player::where('tenant_id', $tenantId)
+                ->where('name', $this->name)
+                ->where('lastname', $this->lastname)
+                ->where('birthdate', $this->birthdate)
+                ->exists();
+
+            if ($exists) {
+                $validator->errors()->add('name', 'Ya existe un jugador registrado con ese nombre, apellido y fecha de nacimiento.');
+            }
+        });
     }
 
     public function rules(): array

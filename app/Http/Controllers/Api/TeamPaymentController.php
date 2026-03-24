@@ -101,6 +101,12 @@ class TeamPaymentController extends Controller
             $query->where('fecha_vencimiento', '<', now())
                   ->whereNotIn('estado', ['pagado', 'cancelado']);
         }
+        if ($request->filled('fecha_desde')) {
+            $query->whereDate('created_at', '>=', $request->fecha_desde);
+        }
+        if ($request->filled('fecha_hasta')) {
+            $query->whereDate('created_at', '<=', $request->fecha_hasta);
+        }
 
         $payments = $query->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 20));

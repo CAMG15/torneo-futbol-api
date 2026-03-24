@@ -69,11 +69,12 @@ app/
 - `playoff_brackets` - Brackets de eliminación directa
 - `teams` - Equipos
 - `players` - Jugadores
-- `matchdays` - Jornadas (incluye `phase_type`, `tournament_phase_id`)
-- `matches` - Partidos (incluye `playoff_bracket_id`, `leg_number`)
+- `matchdays` - Jornadas (incluye `phase_type`, `tournament_phase_id`, `postponed_from`, `postponement_reason`)
+- `matches` - Partidos (incluye `playoff_bracket_id`, `leg_number`, `cancha_id`)
 - `match_events` - Eventos (goles, tarjetas, etc.)
 - `matchday_schedules` - Configuraciones de horarios
-- `matchday_schedule_slots` - Slots de horarios
+- `matchday_schedule_slots` - Slots de horarios (incluye `cancha_id`)
+- `tournament_slot_reservations` - Horarios fijos por equipo en torneo
 
 ### Relaciones Clave
 - Tournament hasMany TournamentPhase
@@ -131,6 +132,20 @@ POST   /api/phases/{id}/create-next-round        # Crear siguiente ronda
 
 # Fixture
 POST   /api/tournaments/{id}/generate-fixture    # Generar fixture Round Robin
+POST   /api/tournaments/{id}/regenerate-fixture  # Regenerar (recalcula stats)
+
+# Jornadas
+POST   /api/tournaments/{id}/matchdays           # Crear jornada
+PUT    /api/matchdays/{id}                       # Editar jornada
+POST   /api/matchdays/{id}/postpone             # Reprogramar jornada (cascade o manual)
+DELETE /api/matchdays/{id}                       # Eliminar jornada
+
+# Horarios fijos
+GET    /api/tournaments/{id}/slot-reservations
+POST   /api/tournaments/{id}/slot-reservations
+PUT    /api/slot-reservations/{id}
+POST   /api/slot-reservations/{id}/mark-paid
+DELETE /api/slot-reservations/{id}
 ```
 
 ## Sistema de Liguilla
@@ -188,3 +203,15 @@ POST   /api/tournaments/{id}/generate-fixture    # Generar fixture Round Robin
 4. **Storage**: Fotos en `storage/app/public/`. Crear symlink con `php artisan storage:link`.
 
 5. **Usuario de prueba**: `admin@torneo.com` / `password123`
+
+6. **Validación unique de equipos**: Scoped por `tenant_id` via `Rule::unique()->where('tenant_id', ...)` en `StoreTeamRequest` y `TeamController::update`. No usar `unique:teams,name` simple (sería global).
+
+7. **Reprogramar jornada** (`POST /matchdays/{id}/postpone`): recibe `new_date`, `reason`, `mode` (cascade|manual). Cascade mueve todas las jornadas siguientes por el mismo offset en días. Guarda `postponed_from` (fecha original) y `postponement_reason`.
+
+8. **Recalcular stats**: `TournamentController::recalculateStatsForTournament()` se llama tras regenerar fixture. Recalcula goles/asistencias/tarjetas de jugadores y wins/losses/draws de equipos desde `match_events` y `matches`.
+
+9. **removeTeam**: Solo elimina partidos con status `!= Finalizado`. Los partidos finalizados se conservan para mantener puntos ganados por el rival.
+
+10. **PayPal**: modo `live` en producción. `paypal_plan_id` en tabla `plans` se crea automáticamente la primera vez (se guarda para no recrear). Si se cambia de sandbox a live hay que limpiar ese campo.
+
+11. **TournamentSlotReservation**: modelo y tabla deben estar presentes en producción para que `generate-fixture` funcione.

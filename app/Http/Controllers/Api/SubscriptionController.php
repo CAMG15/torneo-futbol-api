@@ -100,14 +100,13 @@ class SubscriptionController extends Controller
         }
 
         try {
-            $mpService = new MercadoPagoService();
-            $preference = $mpService->createSubscriptionPreference($tenant, $plan);
+            $mpService   = new MercadoPagoService();
+            $preapproval = $mpService->createPreapproval($tenant, $plan);
 
             return response()->json([
-                'provider' => 'mercadopago',
-                'preference_id' => $preference['preference_id'],
-                'init_point' => $preference['init_point'],
-                'sandbox_init_point' => $preference['sandbox_init_point'],
+                'provider'       => 'mercadopago',
+                'preapproval_id' => $preapproval['preapproval_id'],
+                'init_point'     => $preapproval['init_point'],
             ]);
         } catch (\RuntimeException $e) {
             return response()->json([
@@ -271,14 +270,13 @@ class SubscriptionController extends Controller
         }
 
         try {
-            $mpService  = new MercadoPagoService();
-            $preference = $mpService->createSubscriptionPreference($tenant, $plan);
+            $mpService   = new MercadoPagoService();
+            $preapproval = $mpService->createPreapproval($tenant, $plan);
 
             return response()->json([
-                'provider'        => 'mercadopago',
-                'preference_id'   => $preference['preference_id'],
-                'init_point'      => $preference['init_point'],
-                'sandbox_init_point' => $preference['sandbox_init_point'],
+                'provider'       => 'mercadopago',
+                'preapproval_id' => $preapproval['preapproval_id'],
+                'init_point'     => $preapproval['init_point'],
             ]);
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage(), 'setup_required' => true], 503);

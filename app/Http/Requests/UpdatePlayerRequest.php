@@ -3,12 +3,39 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use App\Models\Player;
 
 class UpdatePlayerRequest extends FormRequest
 {
     public function authorize(): bool
     {
         return true;
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            if ($validator->errors()->any()) return;
+
+            $player = $this->route('player');
+            $tenantId = $this->user()?->tenant_id;
+
+            // Usar valores actuales del jugador si no se envían en el request
+            $name      = $this->name      ?? $player->name;
+            $lastname  = $this->lastname  ?? $player->lastname;
+            $birthdate = $this->birthdate ?? $player->birthdate;
+
+            $exists = Player::where('tenant_id', $tenantId)
+                ->where('name', $name)
+                ->where('lastname', $lastname)
+                ->where('birthdate', $birthdate)
+                ->where('id', '!=', $player->id)
+                ->exists();
+
+            if ($exists) {
+                $validator->errors()->add('name', 'Ya existe un jugador registrado con ese nombre, apellido y fecha de nacimiento.');
+            }
+        });
     }
 
     public function rules(): array
